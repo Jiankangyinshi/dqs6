@@ -1,0 +1,112 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-pass
+  namespace: default
+type: Qpaque
+data:
+#echo -n "Passwd123" |base64
+  password: UGFzc3dkMTIz
+#echo -n "tmp" |base64
+  database: dG1w
+#echo -n "123" |base64
+  passwd: MTIz
+ 
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-php-mysql
+spec:
+  selector:
+    matchLabels:
+      app: nginx-php-mysql
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: nginx-php-mysql
+    spec:
+      containers:
+      - name: php
+        image: registry.cn-shenzhen.aliyuncs.com/user-sum/php
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9000
+        volumeMounts:
+        - name: nginx-data
+          mountPath: /var/www/html/
+ 
+      - name: nginx
+        image: registry.cn-shenzhen.aliyuncs.com/user-sum/alpine:nginx1.18.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nginx-data
+          mountPath: /usr/share/nginx/html
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d/
+ 
+      - image: mysql:5.7
+        imagePullPolicy: IfNotPresent
+        name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+            #kubectl create secret generic mysql-pass --from-literal=password=Passwd123
+              name: mysql-pass
+              key: password
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+            #kubectl create secret generic mysql-pass --from-literal=database=tmp
+              name: mysql-pass
+              key: database
+        - name: MYSQL_USER
+          value: sun
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              #kubectl create secret generic mysql-pass --from-literal=passwd=123
+              name: mysql-pass
+              key: passwd
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: mysql-persistent-storage
+          mountPath: /var/lib/mysql
+ 
+      volumes:
+      - name: nginx-data
+        nfs:
+         server: 192.168.1.1  #nfs server服务器IP
+         path: "/nfs/data"
+#kubectl create cm ngin-conf --from-file=/conf/default.conf
+      - name: nginx-conf
+        configMap:
+         name: ngin-conf
+         items:
+         - key: default.conf
+           path: add.conf
+      - name: mysql-persistent-storage
+        emptyDir: {}
+ 
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-php-mysql
+spec:
+  type: NodePort
+  ports:
+  - name: nginx
+    port: 80
+    protocol: TCP
+    targetPort: 80
+    nodePort: 30010
+  selector:
+    app: nginx-php-mysql
